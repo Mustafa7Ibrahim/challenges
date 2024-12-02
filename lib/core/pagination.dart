@@ -1,16 +1,13 @@
 library pagination;
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 enum PaginationStatus { loading, loaded, error }
 
-/// builder function type for displaying pagination for a sliver list.
 typedef SliverPaginationBuilder<T> = Widget Function(List<T> data, BuildContext context);
-
-/// Error widget builder for load more errors.
 typedef ErrorLoadMoreWidget = Widget Function(int page);
 
-/// A widget that provides paginated view for items of type [T].
 class Pagination<T> extends StatefulWidget {
   const Pagination({
     super.key,
@@ -25,6 +22,9 @@ class Pagination<T> extends StatefulWidget {
     this.physics,
     this.crossAxisAlignment = CrossAxisAlignment.start,
     this.emptyWidget,
+    this.loadThreshold,
+    this.scrollThreshold = 200.0,
+    this.debounceDuration = const Duration(milliseconds: 300),
   });
 
   final bool hasReachedMax;
@@ -38,113 +38,139 @@ class Pagination<T> extends StatefulWidget {
   final CrossAxisAlignment crossAxisAlignment;
   final Widget? emptyWidget;
   final SliverPaginationBuilder<T> builder;
+  final int? loadThreshold;
+  final double scrollThreshold;
+  final Duration debounceDuration;
 
   @override
   State<Pagination<T>> createState() => _PaginationState<T>();
 }
 
 class _PaginationState<T> extends State<Pagination<T>> {
-  final ScrollController _scrollController = ScrollController();
+  late final ScrollController _scrollController;
+
+  Timer? _debounceTimer;
+
   bool _isLoading = false;
-  late final int _loadThreshold = widget.itemsPerPage - 3;
 
-  int get _page => widget.data.length ~/ widget.itemsPerPage + 1;
+  int _lastCalculatedPage = 1;
 
-  void _loadMore() {
-    if (_isLoading || widget.hasReachedMax) return;
-    _isLoading = true;
-    widget.onLoadMore(_page);
-    Future.delayed(const Duration(milliseconds: 100), () => _isLoading = false);
+  bool _isThrottling = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _scrollController = ScrollController();
+
+    _scrollController.addListener(_efficientScrollListener);
   }
 
-  void _checkAndLoadDataIfNeeded() {
-    if (widget.hasReachedMax ||
+  void _efficientScrollListener() {
+    if (_isLoading ||
+        widget.hasReachedMax ||
         widget.status == PaginationStatus.loading ||
         widget.status == PaginationStatus.error) return;
 
-    if (widget.data.length <= _loadThreshold && _page < 2) {
-      _loadMore();
+    final scrollPosition = _scrollController.offset;
+    final maxScrollExtent = _scrollController.position.maxScrollExtent;
+
+    if (scrollPosition > maxScrollExtent - widget.scrollThreshold) {
+      _triggerLoadMore();
     }
   }
 
-  bool _onScrollNotification(ScrollNotification scrollInfo) {
-    if (widget.hasReachedMax ||
-        widget.status == PaginationStatus.loading ||
-        widget.status == PaginationStatus.error) return false;
+  void _triggerLoadMore() {
+    if (_isThrottling) return;
 
-    if (scrollInfo is ScrollUpdateNotification) {
-      final remainingScroll =
-          _scrollController.position.maxScrollExtent - scrollInfo.metrics.pixels;
-      if (remainingScroll <= 100) {
-        _loadMore();
-      }
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(widget.debounceDuration, () {
+      if (_isLoading || widget.hasReachedMax) return;
+
+      _isThrottling = true;
+      setState(() => _isLoading = true);
+
+      final currentPage = _calculatePage();
+
+      Future.microtask(() => widget.onLoadMore(currentPage)).whenComplete(() {
+        if (mounted) {
+          setState(() => _isLoading = false);
+
+          Future.delayed(const Duration(milliseconds: 500), () => _isThrottling = false);
+        }
+      });
+    });
+  }
+
+  int _calculatePage() {
+    _lastCalculatedPage = widget.data.length ~/ widget.itemsPerPage + 1;
+    return _lastCalculatedPage;
+  }
+
+  void _checkInitialDataLoad() {
+    final loadThreshold = widget.loadThreshold ?? (widget.itemsPerPage * 0.7).round();
+
+    if (widget.data.length <= loadThreshold &&
+        !widget.hasReachedMax &&
+        widget.status != PaginationStatus.loading) {
+      _triggerLoadMore();
     }
-    return false;
   }
 
   @override
   void didUpdateWidget(covariant Pagination<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _checkAndLoadDataIfNeeded();
+
+    if (oldWidget.data != widget.data || oldWidget.status != widget.status) {
+      _checkInitialDataLoad();
+    }
   }
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
+    _scrollController.removeListener(_efficientScrollListener);
     _scrollController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool isFirstPageLoading = widget.status == PaginationStatus.loading && _page == 1;
-    final bool isFirstPageError = widget.status == PaginationStatus.error && _page == 1;
+    final page = _calculatePage();
+    final isFirstPageLoading = widget.status == PaginationStatus.loading && page == 1;
+    final isFirstPageError = widget.status == PaginationStatus.error && page == 1;
 
-    return NotificationListener<ScrollNotification>(
-      onNotification: _onScrollNotification,
-      child: CustomScrollView(
-        controller: _scrollController,
-        physics: widget.physics,
-        slivers: [
-          // First page loading
-          if (isFirstPageLoading)
-            const SliverFillRemaining(
-              child: Center(child: CircularProgressIndicator.adaptive()),
-            ),
-
-          // First page error
-          if (isFirstPageError)
-            SliverFillRemaining(
-              child: widget.errorWidget ?? const Center(child: Text('Error loading data')),
-            ),
-
-          // No data available
-          if (widget.data.isEmpty)
-            SliverFillRemaining(
-              child: widget.emptyWidget ?? const Center(child: Text('No data available')),
-            ),
-
-          // Data builder
-          if (widget.data.isNotEmpty) widget.builder(widget.data, context),
-
-          // Loading more indicator
-          if (widget.status == PaginationStatus.loading && _page > 1)
-            const SliverToBoxAdapter(
-              child: SafeArea(
-                child: Padding(
-                  padding: EdgeInsets.only(bottom: 16),
-                  child: Center(child: CircularProgressIndicator.adaptive()),
-                ),
+    return CustomScrollView(
+      physics: widget.physics,
+      controller: _scrollController,
+      slivers: [
+        if (isFirstPageLoading)
+          const SliverFillRemaining(child: Center(child: CircularProgressIndicator.adaptive()))
+        else if (isFirstPageError)
+          SliverFillRemaining(
+            child: widget.errorWidget ?? const Center(child: Text('Error loading data')),
+          )
+        else if (widget.data.isEmpty)
+          SliverFillRemaining(
+            child: widget.emptyWidget ?? const Center(child: Text('No data available')),
+          )
+        else
+          widget.builder(widget.data, context),
+        if (widget.status == PaginationStatus.loading && page > 1)
+          const SliverToBoxAdapter(
+            child: SafeArea(
+              child: Padding(
+                padding: EdgeInsets.only(bottom: 16),
+                child: Center(child: CircularProgressIndicator.adaptive()),
               ),
             ),
-
-          // Load more error
-          if (widget.status == PaginationStatus.error && _page > 1)
-            SliverToBoxAdapter(
-              child: widget.errorLoadMoreWidget?.call(_page) ??
-                  const Center(child: Text('Error loading data')),
-            ),
-        ],
-      ),
+          ),
+        if (widget.status == PaginationStatus.error && page > 1)
+          SliverToBoxAdapter(
+            child: widget.errorLoadMoreWidget?.call(page) ??
+                const Center(child: Text('Error loading data')),
+          ),
+      ],
     );
   }
 }
