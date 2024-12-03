@@ -15,6 +15,13 @@ class MyApp extends StatelessWidget {
       title: 'Challenges',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.black),
+        scaffoldBackgroundColor: Colors.white,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.white,
+          titleTextStyle: TextStyle(color: Colors.black),
+          iconTheme: IconThemeData(color: Colors.black),
+          surfaceTintColor: Colors.white,
+        ),
         useMaterial3: true,
       ),
       home: const Home(),
@@ -44,9 +51,9 @@ class Home extends StatelessWidget {
             title: const Text('Challenge Two'),
             subtitle: const Text('Product List'),
             onTap: () {
-              Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => const ProductListScreen(),
-              ));
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ProductListScreen()),
+              );
             },
           ),
         ],
