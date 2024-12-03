@@ -22,22 +22,31 @@ class ProductListScreenState extends State<ProductListScreen> {
             appBar: AppBar(
               title: const Text('Product List'),
               actions: [
+                // on tap of each button, the list will be modified
+                // and the load more will be disabled
+                // this button will filter the list to show only products
+                // with category 'Electronics' and price between 100 and 500
                 IconButton(
                   icon: const Icon(Icons.filter_alt),
                   onPressed: () {
                     context.read<ProductCubit>().filterProducts('Electronics', 100.0, 500.0);
                   },
                 ),
+                // this button will sort the list based on the price
                 IconButton(
                   icon: const Icon(Icons.sort),
                   onPressed: () => context.read<ProductCubit>().sortProducts('price'),
                 ),
+                // this button will reset the list to the original list and enable load more
                 IconButton(
                   icon: const Icon(Icons.list_alt_outlined),
                   onPressed: () => context.read<ProductCubit>().fetchProducts(1),
                 ),
               ],
             ),
+
+            // use pagination widget to show the list of products
+            // with a sliver list builder
             body: Pagination(
               hasReachedMax: state.hasReachedMax,
               itemsPerPage: state.itemsPerPage,

@@ -11,12 +11,14 @@ class ProductCubit extends Cubit<ProductState> {
   ProductCubit() : super(const ProductState());
 
   final ProductRepository productRepository = ProductRepositoryImpl();
-
+  // the maximum number of pages to fetch is 2500
+  // so it fetches 2500 * 20 = 50000 items
   final maxPage = 2500;
 
   void fetchProducts(int page) async {
     if (state.status == PaginationStatus.loading && page != 1) return;
-
+    // the is modified flag is used to determine if the list is modified
+    // using sort or filter to prevent loadmore on filtered or sorted list
     emit(state.copyWith(status: PaginationStatus.loading, isModified: false));
 
     final products = await productRepository.getProduct(page);
@@ -30,7 +32,8 @@ class ProductCubit extends Cubit<ProductState> {
 
   void filterProducts(String category, double minPrice, double maxPrice) async {
     if (state.status == PaginationStatus.loading) return;
-
+    // the is modified flag is used to determine if the list is modified
+    // using sort or filter to prevent loadmore on filtered or sorted list
     emit(state.copyWith(status: PaginationStatus.loading, isModified: true));
 
     final list = await productRepository.filterProducts(
@@ -45,7 +48,8 @@ class ProductCubit extends Cubit<ProductState> {
 
   void sortProducts(String criteria) async {
     if (state.status == PaginationStatus.loading) return;
-
+    // the is modified flag is used to determine if the list is modified
+    // using sort or filter to prevent loadmore on filtered or sorted list
     emit(state.copyWith(status: PaginationStatus.loading, isModified: true));
 
     final list = await productRepository.sortProducts(state.products, criteria);

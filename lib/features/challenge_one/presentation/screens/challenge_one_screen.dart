@@ -10,6 +10,8 @@ class DebuggingTask extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Debugging Task')),
       body: const Column(
+        // separated the two sections into two widgets
+        // to separate the state of each widget
         children: [
           Expanded(child: ListPaginationSection()),
           AnimationSection(),
@@ -37,11 +39,17 @@ class _ListPaginationSectionState extends State<ListPaginationSection> {
   @override
   void initState() {
     super.initState();
+    // start with loading the first page and 20 items
     list.addAll(List.generate(20, (index) => index));
-    currentPage++;
     status = PaginationStatus.loaded;
   }
 
+  /*
+    simulate loading more data by doing the following:
+    1- by adding 20 items to the list
+    2- changing the status to loaded
+    3- incrementing the current page
+  */
   onLoadMore(page) {
     setState(() => status = PaginationStatus.loading);
     Future.delayed(const Duration(seconds: 2), () {
@@ -55,6 +63,10 @@ class _ListPaginationSectionState extends State<ListPaginationSection> {
 
   @override
   Widget build(BuildContext context) {
+    /*
+      use the Pagination widget to handle the pagination logic
+      and the loading of more data with a sliver list to load lazy items
+    */
     return Pagination(
       hasReachedMax: currentPage == totalPages,
       itemsPerPage: itemsPerPage,
@@ -104,6 +116,7 @@ class _AnimationSectionState extends State<AnimationSection> {
   @override
   void dispose() {
     super.dispose();
+    // dispose the timer
     timer.cancel();
   }
 
